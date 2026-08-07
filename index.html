@@ -189,7 +189,7 @@
 <body>
 
 <div id="canvas-container">
-  <div class="version-badge">1.0v Beta</div>
+  <div class="version-badge">1.1v Beta</div>
 
   <div class="hud" id="hud" style="display: none;">
     <div class="hud-card p1">
@@ -1219,6 +1219,7 @@ function showOnlinePanel() {
   if (!peer || peer.destroyed) {
     const customId = Math.floor(100000 + Math.random() * 900000).toString();
     
+    // WebRTC Cross-Network ICE Config (STUN/TURN Fallback)
     peer = new Peer(customId, {
       config: {
         iceServers: [
@@ -1227,6 +1228,7 @@ function showOnlinePanel() {
           { urls: 'stun:stun2.l.google.com:19302' },
           { urls: 'stun:stun3.l.google.com:19302' },
           { urls: 'stun:stun4.l.google.com:19302' },
+          { urls: 'stun:stun.services.mozilla.com' },
           { urls: 'turn:openrelay.metered.ca:80', username: 'openrelay', credential: 'openrelay' },
           { urls: 'turn:openrelay.metered.ca:443', username: 'openrelay', credential: 'openrelay' },
           { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelay', credential: 'openrelay' }
@@ -1249,9 +1251,8 @@ function showOnlinePanel() {
     });
 
     peer.on('error', err => {
-      console.error(err);
-      document.getElementById('online-status').innerText = 'Bağlantı Hatası!';
-      alert('Sunucu hatası: ' + err.type);
+      console.error('PeerJS Hatası:', err);
+      document.getElementById('online-status').innerText = 'Bağlantı Hatası: ' + err.type;
     });
   } else if (peer.open) {
     document.getElementById('online-status').innerText = 'Sunucu Hazır!';
@@ -1284,7 +1285,14 @@ function joinRoom() {
 }
 
 function setupPeerEvents() {
+  let timeoutCheck = setTimeout(() => {
+    if (!gameRunning) {
+      document.getElementById('online-status').innerText = 'Bağlantı Zamana Aşımına Uğradı! (Farklı Ağ Güvenlik Duvarı)';
+    }
+  }, 10000);
+
   conn.on('open', () => {
+    clearTimeout(timeoutCheck);
     gameMode = 'ONLINE';
     if (isHost) {
       conn.send({ type: 'init', mapId: selectedMapId, p1Name: getPlayerName() });
@@ -1338,7 +1346,8 @@ function setupPeerEvents() {
   });
 
   conn.on('error', err => {
-    alert('Bağlantı hatası oluştu!');
+    console.error('Kanal Hatası:', err);
+    alert('Bağlantı kopması oluştu!');
   });
 }
 
