@@ -307,7 +307,7 @@
     </div>
 
     <div class="online-panel" id="online-panel">
-      <div id="online-status" style="font-size: 0.85rem; color: #b09983;">Ağ Bağlantısı Bekleniyor...</div>
+      <div id="online-status" style="font-size: 0.85rem; color: #b09983;">Ağ Sunucusuna Bağlanılıyor...</div>
       <div id="host-section" style="display:none;">
         <div style="font-size: 0.8rem; color: #876d54; margin-bottom: 4px;">Oda Kodu:</div>
         <div class="room-code-display" id="my-code" onclick="copyCode()">---</div>
@@ -358,7 +358,7 @@ function toggleShake() {
   document.getElementById('shake-toggle').classList.toggle('active', settings.screenShakeEnabled);
 }
 
-// Web Audio API Synthesizer 2.0
+// Web Audio API Synthesizer
 const AudioCtx = window.AudioContext || window.webkitAudioContext;
 let audioCtx = null;
 
@@ -507,6 +507,7 @@ let peer = null;
 let conn = null;
 let gameRunning = false;
 let screenShake = 0;
+let connectTimeout = null;
 
 const keys = {};
 const mouse = { x: 0, y: 0, worldX: 0, worldY: 0, down: false };
@@ -1185,6 +1186,7 @@ function startBotMode() {
 
 function endGame(msg) {
   gameRunning = false;
+  if (connectTimeout) clearTimeout(connectTimeout);
   setTimeout(() => {
     alert(msg);
     document.getElementById('menu').style.display = 'flex';
@@ -1197,19 +1199,6 @@ function endGame(msg) {
   }, 100);
 }
 
-// DÜZELTME: Farklı ağlardan/evlerden bağlanmak için Google STUN sunucuları eklendi.
-const peerConfig = {
-  config: {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' }
-    ]
-  }
-};
-
 function showOnlinePanel() {
   document.getElementById('main-btns').style.display = 'none';
   document.getElementById('online-panel').style.display = 'flex';
@@ -1217,7 +1206,17 @@ function showOnlinePanel() {
 
   if (!peer || peer.destroyed) {
     const customId = Math.floor(100000 + Math.random() * 900000).toString();
-    peer = new Peer(customId, peerConfig);
+    
+    // Google STUN Sunucuları Eklendi (Mobil/Farklı İnternetler İçin Şart)
+    peer = new Peer(customId, {
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ]
+      }
+    });
 
     peer.on('open', id => {
       document.getElementById('online-status').innerText = 'Sunucu Hazır!';
@@ -1235,8 +1234,8 @@ function showOnlinePanel() {
 
     peer.on('error', err => {
       console.error(err);
-      document.getElementById('online-status').innerText = 'Bağlantı Hatası!';
-      alert('Sunucu hatası: ' + err.type);
+      document.getElementById('online-status').innerText = 'Sunucu Hata Verdi!';
+      alert('Ağ Hatası: ' + err.type);
     });
   } else if (peer.open) {
     document.getElementById('online-status').innerText = 'Sunucu Hazır!';
@@ -1248,6 +1247,7 @@ function showOnlinePanel() {
 function hideOnlinePanel() {
   document.getElementById('main-btns').style.display = 'flex';
   document.getElementById('online-panel').style.display = 'none';
+  if (connectTimeout) clearTimeout(connectTimeout);
 }
 
 function joinRoom() {
@@ -1262,16 +1262,30 @@ function joinRoom() {
   }
 
   document.getElementById('online-status').innerText = 'Odaya Bağlanılıyor...';
-  // DÜZELTME: Güvenilir paket transferi (reliable: true) ile baglantı sağlama
+  
+  // Bağlantıyı güvenilir modda başlat
   conn = peer.connect(code, { reliable: true });
   isHost = false;
   p2.name = getPlayerName();
+
+  // 8 Saniyelik Zaman Aşımı Koruması
+  if (connectTimeout) clearTimeout(connectTimeout);
+  connectTimeout = setTimeout(() => {
+    if (!gameRunning) {
+      document.getElementById('online-status').innerText = 'Bağlantı Başarısız!';
+      alert('Odaya bağlanılamadı! Oda kodunu doğru girdiğinden ve kurucunun menüde beklediğinden emin ol.');
+      if (conn) conn.close();
+    }
+  }, 8000);
+
   setupPeerEvents();
 }
 
 function setupPeerEvents() {
+  if (!conn) return;
+
   conn.on('open', () => {
-    document.getElementById('online-status').innerText = 'Bağlantı Kuruldu!';
+    if (connectTimeout) clearTimeout(connectTimeout);
     gameMode = 'ONLINE';
     if (isHost) {
       conn.send({ type: 'init', mapId: selectedMapId, p1Name: getPlayerName() });
