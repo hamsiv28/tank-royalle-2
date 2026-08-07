@@ -12,6 +12,15 @@
     #canvas-container { position: relative; width: 100vw; height: 100vh; }
     canvas { display: block; background: #18120c; }
 
+    /* Sol Alt Sürüm Etiketi */
+    .version-badge {
+      position: absolute; bottom: 10px; left: 12px;
+      font-size: 0.75rem; font-weight: 800; color: rgba(220, 178, 130, 0.6);
+      letter-spacing: 1.5px; pointer-events: none; z-index: 30;
+      text-shadow: 1px 1px 3px rgba(0,0,0,0.9);
+      font-family: 'Courier New', Courier, monospace;
+    }
+
     /* HUD */
     .hud {
       position: absolute; top: 12px; left: 12px; right: 12px;
@@ -180,6 +189,8 @@
 <body>
 
 <div id="canvas-container">
+  <div class="version-badge">1.0v Beta</div>
+
   <div class="hud" id="hud" style="display: none;">
     <div class="hud-card p1">
       <div class="card-title" id="p1-name">OYUNCU 1</div>
@@ -334,17 +345,6 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-// PeerJS STUN Yapılandırması (Mobil veri - Wi-Fi erişim sorunları için)
-const peerConfig = {
-  config: {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
-    ]
-  }
-};
-
-// Ayarlar ve Ses Yönetimi
 const settings = {
   sfxEnabled: true,
   volume: 0.8,
@@ -359,16 +359,13 @@ function toggleSFX() {
   document.getElementById('sfx-toggle').classList.toggle('active', settings.sfxEnabled);
 }
 
-function updateVolume(val) {
-  settings.volume = val / 100;
-}
+function updateVolume(val) { settings.volume = val / 100; }
 
 function toggleShake() {
   settings.screenShakeEnabled = !settings.screenShakeEnabled;
   document.getElementById('shake-toggle').classList.toggle('active', settings.screenShakeEnabled);
 }
 
-// Web Audio API Synthesizer 2.0
 const AudioCtx = window.AudioContext || window.webkitAudioContext;
 let audioCtx = null;
 
@@ -453,7 +450,6 @@ function playSound(type) {
   } catch(e) {}
 }
 
-// Yetenek Tanımları
 const ALL_SKILLS = [
   { id: 0, name: "CAN YENİLE", cost: 2, icon: "💚", cdMax: 600 },
   { id: 1, name: "3'LÜ MERMİ", cost: 1, icon: "🔱", cdMax: 360 },
@@ -873,6 +869,13 @@ class Tank {
 const p1 = new Tank(200, 200, '#00e5ff', 'OYUNCU 1', '#00e5ff');
 const p2 = new Tank(2200, 1600, '#ff3366', 'DÜŞMAN', '#ff3366');
 
+function executeSkillEffect(user, target, skillId) {
+  if (skillId === 0) user.heal();
+  else if (skillId === 1) { user.nextShotTriple = true; playSound('skill'); }
+  else if (skillId === 2) { target.blindTimer = 60; playSound('skill'); }
+  else if (skillId === 3) { user.nextShotBounce = true; playSound('skill'); }
+}
+
 function triggerSkillSlot(slotIndex) {
   const localPlayer = (gameMode === 'ONLINE' && !isHost) ? p2 : p1;
   const targetPlayer = (localPlayer === p1) ? p2 : p1;
@@ -885,10 +888,11 @@ function triggerSkillSlot(slotIndex) {
 
   if (!skill) return;
 
-  if (skill.id === 0) localPlayer.heal();
-  else if (skill.id === 1) { localPlayer.nextShotTriple = true; playSound('skill'); }
-  else if (skill.id === 2) { targetPlayer.blindTimer = 60; playSound('skill'); }
-  else if (skill.id === 3) { localPlayer.nextShotBounce = true; playSound('skill'); }
+  executeSkillEffect(localPlayer, targetPlayer, skill.id);
+
+  if (gameMode === 'ONLINE' && conn && conn.open) {
+    conn.send({ type: 'useSkill', skillId: skill.id });
+  }
 
   localPlayer.skillCDs[slotIndex] = skill.cdMax;
   updateInGameSkillUI();
@@ -1213,9 +1217,22 @@ function showOnlinePanel() {
   document.getElementById('online-status').innerText = 'Ağ Sunucusuna Bağlanılıyor...';
 
   if (!peer || peer.destroyed) {
-    // 5 Haneli Sade Oda Kodu Üretimi
-    const customId = Math.floor(10000 + Math.random() * 90000).toString();
-    peer = new Peer(customId, peerConfig);
+    const customId = Math.floor(100000 + Math.random() * 900000).toString();
+    
+    peer = new Peer(customId, {
+      config: {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' },
+          { urls: 'stun:stun3.l.google.com:19302' },
+          { urls: 'stun:stun4.l.google.com:19302' },
+          { urls: 'turn:openrelay.metered.ca:80', username: 'openrelay', credential: 'openrelay' },
+          { urls: 'turn:openrelay.metered.ca:443', username: 'openrelay', credential: 'openrelay' },
+          { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelay', credential: 'openrelay' }
+        ]
+      }
+    });
 
     peer.on('open', id => {
       document.getElementById('online-status').innerText = 'Sunucu Hazır!';
@@ -1233,12 +1250,8 @@ function showOnlinePanel() {
 
     peer.on('error', err => {
       console.error(err);
-      if (err.type === 'peer-not-found') {
-        alert('Oda bulunamadı! Oda kodunu ve kurucunun menüde beklediğini kontrol et.');
-      } else {
-        alert('Ağ Hatası: ' + err.type);
-      }
       document.getElementById('online-status').innerText = 'Bağlantı Hatası!';
+      alert('Sunucu hatası: ' + err.type);
     });
   } else if (peer.open) {
     document.getElementById('online-status').innerText = 'Sunucu Hazır!';
@@ -1289,18 +1302,30 @@ function setupPeerEvents() {
     }
     if (data.type === 'join' && isHost) {
       if (data.p2Name) p2.name = data.p2Name;
+      conn.send({ type: 'init', mapId: selectedMapId, p1Name: p1.name });
+    }
+
+    if (data.type === 'useSkill') {
+      const remoteUser = isHost ? p2 : p1;
+      const remoteTarget = isHost ? p1 : p2;
+      executeSkillEffect(remoteUser, remoteTarget, data.skillId);
     }
 
     if (isHost) {
       if (data.p2) {
         p2.x = data.p2.x; p2.y = data.p2.y; p2.angle = data.p2.angle; p2.turretAngle = data.p2.turretAngle;
         p2.blindTimer = data.p2.blindTimer;
+        p2.nextShotTriple = data.p2.nextShotTriple;
+        p2.nextShotBounce = data.p2.nextShotBounce;
+        if (data.p2.hp !== undefined) p2.hp = data.p2.hp;
       }
       if (data.p2Shooting) p2.shoot();
     } else {
       if (data.p1) {
         p1.x = data.p1.x; p1.y = data.p1.y; p1.angle = data.p1.angle; p1.turretAngle = data.p1.turretAngle;
         p1.blindTimer = data.p1.blindTimer;
+        p1.nextShotTriple = data.p1.nextShotTriple;
+        p1.nextShotBounce = data.p1.nextShotBounce;
       }
       if (data.p1Hp !== undefined) p1.hp = data.p1Hp;
       if (data.p2Hp !== undefined) p2.hp = data.p2Hp;
@@ -1321,14 +1346,21 @@ function syncOnlineState() {
   if (gameMode !== 'ONLINE' || !conn || !conn.open) return;
   if (isHost) {
     conn.send({
-      p1: { x: p1.x, y: p1.y, angle: p1.angle, turretAngle: p1.turretAngle, blindTimer: p1.blindTimer },
+      p1: { 
+        x: p1.x, y: p1.y, angle: p1.angle, turretAngle: p1.turretAngle, 
+        blindTimer: p1.blindTimer, nextShotTriple: p1.nextShotTriple, nextShotBounce: p1.nextShotBounce 
+      },
       p1Hp: p1.hp,
       p2Hp: p2.hp,
       p1Shooting: mouse.down && p1.cooldown <= 0
     });
   } else {
     conn.send({
-      p2: { x: p2.x, y: p2.y, angle: p2.angle, turretAngle: p2.turretAngle, blindTimer: p2.blindTimer },
+      p2: { 
+        x: p2.x, y: p2.y, angle: p2.angle, turretAngle: p2.turretAngle, 
+        blindTimer: p2.blindTimer, nextShotTriple: p2.nextShotTriple, nextShotBounce: p2.nextShotBounce,
+        hp: p2.hp 
+      },
       p2Shooting: mouse.down && p2.cooldown <= 0
     });
   }
