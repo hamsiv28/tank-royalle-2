@@ -1,0 +1,1334 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Tactical War 2D - HD Terrain & Audio Update</title>
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; user-select: none; -webkit-user-select: none; font-family: 'Segoe UI', Roboto, sans-serif; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background: #0c0906; color: #fff; touch-action: none; }
+    
+    #canvas-container { position: relative; width: 100vw; height: 100vh; }
+    canvas { display: block; background: #18120c; }
+
+    /* HUD */
+    .hud {
+      position: absolute; top: 12px; left: 12px; right: 12px;
+      display: flex; justify-content: space-between; pointer-events: none; z-index: 5;
+    }
+    .hud-card {
+      background: rgba(15, 10, 6, 0.92);
+      border: 2px solid #523f2e;
+      border-left: 5px solid #00e5ff;
+      padding: 8px 14px; border-radius: 8px;
+      backdrop-filter: blur(8px); min-width: 200px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.8);
+    }
+    .hud-card.p2 { border-left-color: #ff3366; text-align: right; }
+    .card-title { font-size: 11px; font-weight: 900; letter-spacing: 2px; color: #cbb299; margin-bottom: 4px; text-transform: uppercase; }
+    .hp-bar-bg { width: 100%; height: 12px; background: #000; border-radius: 4px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1); }
+    .hp-bar-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #28a745, #20c997); transition: width 0.2s ease; }
+    .p2 .hp-bar-fill { background: linear-gradient(90deg, #dc3545, #ff3366); }
+
+    /* In-Game Yetenek Barı */
+    .skill-bar {
+      position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 10px; z-index: 6; pointer-events: auto;
+      background: rgba(15, 10, 6, 0.92); padding: 8px 14px; border-radius: 10px;
+      border: 2px solid #523f2e; backdrop-filter: blur(8px);
+    }
+    .skill-slot {
+      width: 60px; height: 60px; background: #261a10; border: 2px solid #634a33;
+      border-radius: 8px; display: flex; flex-direction: column; align-items: center;
+      justify-content: center; cursor: pointer; transition: all 0.15s ease; position: relative;
+      overflow: hidden;
+    }
+    .skill-slot:active { transform: scale(0.95); }
+    .skill-slot.disabled { opacity: 0.4; filter: grayscale(1); }
+    .skill-slot.active-buff { border-color: #00e5ff; box-shadow: 0 0 12px #00e5ff; }
+    .skill-key { position: absolute; top: 2px; left: 4px; font-size: 0.6rem; color: #876d54; font-weight: bold; }
+    .skill-cost-badge { position: absolute; top: 2px; right: 4px; font-size: 0.6rem; color: #ffd700; font-weight: bold; }
+    .skill-icon { font-size: 1.4rem; margin-top: 2px; }
+    .skill-name { font-size: 0.55rem; font-weight: 800; color: #ede0d0; text-align: center; margin-top: 1px; }
+    
+    .cd-overlay {
+      position: absolute; inset: 0; background: rgba(0,0,0,0.78);
+      color: #fff; font-weight: bold; font-size: 1rem;
+      display: flex; align-items: center; justify-content: center; display: none;
+    }
+
+    /* Mobil Joystickler */
+    .joystick-zone {
+      position: absolute; bottom: 20px; width: 140px; height: 140px;
+      border-radius: 50%; background: rgba(255,255,255,0.03);
+      border: 2px dashed rgba(255,255,255,0.18); z-index: 5; pointer-events: auto;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #joy-move { left: 20px; }
+    #joy-aim { right: 20px; }
+    .joystick-stick {
+      width: 50px; height: 50px; border-radius: 50%;
+      background: rgba(220, 178, 130, 0.4); border: 2px solid #dcb282;
+      position: absolute; pointer-events: none;
+    }
+
+    /* Menü ve Modallar */
+    .overlay {
+      position: absolute; inset: 0; background: rgba(10, 7, 5, 0.96);
+      backdrop-filter: blur(12px); display: flex; flex-direction: column;
+      justify-content: center; align-items: center; z-index: 10;
+      overflow-y: auto; padding: 20px 0;
+    }
+    .title-box { text-align: center; margin-bottom: 12px; }
+    h1 {
+      font-size: 2.8rem; font-weight: 900; letter-spacing: 3px;
+      color: #dcb282; text-transform: uppercase;
+      text-shadow: 3px 3px 0px #000, 0 0 25px rgba(220, 178, 130, 0.25);
+    }
+    p.subtitle { color: #876d54; font-size: 0.8rem; letter-spacing: 3px; font-weight: bold; }
+
+    .config-box {
+      width: 360px; background: #1c150e; border: 2px solid #4a3827;
+      padding: 12px 16px; border-radius: 8px; margin-bottom: 10px;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.6);
+    }
+    .section-label { font-size: 0.75rem; font-weight: 800; color: #cbb299; letter-spacing: 1.5px; margin-bottom: 6px; display: flex; justify-content: space-between; }
+    .profile-input {
+      width: 100%; padding: 8px 12px; border-radius: 4px; border: 2px solid #4a3827;
+      background: #0d0a06; color: #00e5ff; font-size: 1rem; text-align: center;
+      letter-spacing: 2px; outline: none; font-weight: bold; text-transform: uppercase;
+    }
+
+    .capacity-bar-bg { width: 100%; height: 10px; background: #0d0a06; border-radius: 5px; border: 1px solid #4a3827; overflow: hidden; margin-top: 4px; }
+    .capacity-bar-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #00e5ff, #ffd700); transition: width 0.3s ease; }
+
+    .map-grid { display: flex; gap: 8px; }
+    .map-card {
+      flex: 1; padding: 8px; background: #120e0a; border: 2px solid #332519;
+      border-radius: 6px; cursor: pointer; text-align: center; transition: all 0.2s ease;
+    }
+    .map-card.active { border-color: #dcb282; background: #2b1f14; }
+    .map-card-title { font-size: 0.75rem; font-weight: 800; color: #ede0d0; }
+
+    .skill-select-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }
+    .skill-select-card {
+      background: #120e0a; border: 2px solid #332519; border-radius: 6px;
+      padding: 8px; cursor: pointer; display: flex; align-items: center; gap: 8px;
+      transition: all 0.2s ease;
+    }
+    .skill-select-card.selected { border-color: #00e5ff; background: #122430; }
+    .skill-select-icon { font-size: 1.3rem; }
+    .skill-select-info { display: flex; flex-direction: column; }
+    .skill-select-title { font-size: 0.7rem; font-weight: bold; color: #fff; }
+    .skill-select-cost { font-size: 0.65rem; color: #ffd700; font-weight: 800; }
+
+    .btn-group { display: flex; flex-direction: column; gap: 8px; width: 360px; }
+    .btn {
+      background: linear-gradient(135deg, #4a3522, #24190e);
+      border: 2px solid #6b4e33; color: #ede0d0;
+      padding: 12px 20px; font-size: 0.95rem; font-weight: 900;
+      border-radius: 6px; cursor: pointer; transition: all 0.2s ease;
+      text-transform: uppercase; letter-spacing: 2px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+    }
+    .btn:hover { border-color: #dcb282; color: #fff; transform: translateY(-2px); }
+    .btn-settings { background: linear-gradient(135deg, #2b2b2b, #141414); border-color: #555; }
+    .btn-settings:hover { border-color: #00e5ff; color: #00e5ff; }
+
+    /* Ayarlar Paneli Modal */
+    .settings-modal {
+      display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.85);
+      z-index: 20; justify-content: center; align-items: center; backdrop-filter: blur(8px);
+    }
+    .settings-content {
+      width: 340px; background: #18120c; border: 2px solid #523f2e;
+      border-radius: 10px; padding: 18px; box-shadow: 0 10px 30px #000;
+    }
+    .setting-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+    .setting-label { font-size: 0.85rem; font-weight: bold; color: #ede0d0; }
+    .toggle-switch {
+      width: 50px; height: 26px; background: #332519; border-radius: 13px;
+      position: relative; cursor: pointer; border: 2px solid #523f2e; transition: 0.2s;
+    }
+    .toggle-switch.active { background: #28a745; border-color: #20c997; }
+    .toggle-circle {
+      width: 18px; height: 18px; background: #fff; border-radius: 50%;
+      position: absolute; top: 2px; left: 2px; transition: 0.2s;
+    }
+    .toggle-switch.active .toggle-circle { left: 26px; }
+    .volume-slider { width: 120px; accent-color: #dcb282; cursor: pointer; }
+
+    .online-panel {
+      display: none; flex-direction: column; gap: 10px; width: 360px;
+      background: #1c150e; border: 2px solid #4a3827;
+      padding: 16px; border-radius: 8px; text-align: center;
+    }
+    input[type="text"].room-input {
+      width: 100%; padding: 10px; border-radius: 4px; border: 2px solid #4a3827;
+      background: #0d0a06; color: #fff; font-size: 1.1rem; text-align: center;
+      letter-spacing: 3px; outline: none; font-weight: bold; text-transform: uppercase;
+    }
+    .room-code-display {
+      font-size: 1.3rem; font-weight: 900; color: #dcb282;
+      background: #0d0a06; padding: 8px; border-radius: 4px;
+      border: 2px dashed #4a3827; user-select: all; cursor: pointer;
+    }
+    .back-btn { background: transparent; border: none; color: #876d54; cursor: pointer; margin-top: 4px; font-weight: bold; }
+  </style>
+</head>
+<body>
+
+<div id="canvas-container">
+  <div class="hud" id="hud" style="display: none;">
+    <div class="hud-card p1">
+      <div class="card-title" id="p1-name">OYUNCU 1</div>
+      <div class="hp-bar-bg"><div class="hp-bar-fill" id="p1-hp"></div></div>
+    </div>
+    <div class="hud-card p2">
+      <div class="card-title" id="p2-name">DÜŞMAN</div>
+      <div class="hp-bar-bg"><div class="hp-bar-fill" id="p2-hp"></div></div>
+    </div>
+  </div>
+
+  <div class="joystick-zone" id="joy-move" style="display:none;"><div class="joystick-stick" id="stick-move"></div></div>
+  <div class="joystick-zone" id="joy-aim" style="display:none;"><div class="joystick-stick" id="stick-aim"></div></div>
+
+  <div class="skill-bar" id="skill-bar" style="display: none;">
+    <div class="skill-slot" id="slot-0" onclick="triggerSkillSlot(0)">
+      <span class="skill-key">1</span><span class="skill-cost-badge" id="cost-0">2 YP</span>
+      <span class="skill-icon" id="icon-0">💚</span><span class="skill-name" id="name-0">CAN YENİLE</span>
+      <div class="cd-overlay" id="cd-0">0</div>
+    </div>
+    <div class="skill-slot" id="slot-1" onclick="triggerSkillSlot(1)">
+      <span class="skill-key">2</span><span class="skill-cost-badge" id="cost-1">1 YP</span>
+      <span class="skill-icon" id="icon-1">🔱</span><span class="skill-name" id="name-1">3'LÜ MERMİ</span>
+      <div class="cd-overlay" id="cd-1">0</div>
+    </div>
+    <div class="skill-slot" id="slot-2" onclick="triggerSkillSlot(2)">
+      <span class="skill-key">3</span><span class="skill-cost-badge" id="cost-2">2 YP</span>
+      <span class="skill-icon" id="icon-2">👁️‍🗨️</span><span class="skill-name" id="name-2">KÖRLÜK</span>
+      <div class="cd-overlay" id="cd-2">0</div>
+    </div>
+  </div>
+
+  <!-- Ayarlar Modalı -->
+  <div class="settings-modal" id="settings-modal">
+    <div class="settings-content">
+      <div class="section-label" style="font-size: 1rem; margin-bottom: 12px;">⚙️ OYUN AYARLARI</div>
+      <div class="setting-row">
+        <span class="setting-label">SES EFEKTLERİ</span>
+        <div class="toggle-switch active" id="sfx-toggle" onclick="toggleSFX()">
+          <div class="toggle-circle"></div>
+        </div>
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">SES SEVİYESİ</span>
+        <input type="range" class="volume-slider" id="volume-range" min="0" max="100" value="80" oninput="updateVolume(this.value)">
+      </div>
+      <div class="setting-row">
+        <span class="setting-label">EKRAN SARSINTISI</span>
+        <div class="toggle-switch active" id="shake-toggle" onclick="toggleShake()">
+          <div class="toggle-circle"></div>
+        </div>
+      </div>
+      <button class="btn" style="width: 100%; margin-top: 10px; padding: 8px;" onclick="closeSettings()">KAPAT</button>
+    </div>
+  </div>
+
+  <!-- Menü -->
+  <div class="overlay" id="menu">
+    <div class="title-box">
+      <h1>TACTICAL WAR</h1>
+      <p class="subtitle">HD TERRAIN & AUDIO</p>
+    </div>
+
+    <div class="config-box">
+      <label class="section-label">OYUNCU ADI</label>
+      <input type="text" id="username-input" class="profile-input" maxlength="12" placeholder="OYUNCU 1">
+    </div>
+
+    <div class="config-box">
+      <label class="section-label">HARİTA SEÇİMİ</label>
+      <div class="map-grid">
+        <div class="map-card active" id="map-btn-1" onclick="selectMap(1)">
+          <div class="map-card-title">🪵 TOPRAK VE TAŞ</div>
+        </div>
+        <div class="map-card" id="map-btn-2" onclick="selectMap(2)">
+          <div class="map-card-title">🏜️ ÇÖL KUMU</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="config-box">
+      <div class="section-label">
+        <span>YETENEK KUŞANMA</span>
+        <span id="capacity-text" style="color: #00e5ff;">5 / 5 YP KAPASİTE</span>
+      </div>
+      <div class="capacity-bar-bg">
+        <div class="capacity-bar-fill" id="capacity-fill" style="width: 100%;"></div>
+      </div>
+      <div class="skill-select-grid">
+        <div class="skill-select-card selected" id="sel-skill-0" onclick="toggleSkillEquip(0)">
+          <span class="skill-select-icon">💚</span>
+          <div class="skill-select-info">
+            <span class="skill-select-title">Can Yenileme</span>
+            <span class="skill-select-cost">2 YP</span>
+          </div>
+        </div>
+        <div class="skill-select-card selected" id="sel-skill-1" onclick="toggleSkillEquip(1)">
+          <span class="skill-select-icon">🔱</span>
+          <div class="skill-select-info">
+            <span class="skill-select-title">3'lü Mermi</span>
+            <span class="skill-select-cost">1 YP</span>
+          </div>
+        </div>
+        <div class="skill-select-card selected" id="sel-skill-2" onclick="toggleSkillEquip(2)">
+          <span class="skill-select-icon">👁️‍🗨️</span>
+          <div class="skill-select-info">
+            <span class="skill-select-title">Körlük</span>
+            <span class="skill-select-cost">2 YP</span>
+          </div>
+        </div>
+        <div class="skill-select-card" id="sel-skill-3" onclick="toggleSkillEquip(3)">
+          <span class="skill-select-icon">🏀</span>
+          <div class="skill-select-info">
+            <span class="skill-select-title">Seken Mermi</span>
+            <span class="skill-select-cost">1 YP</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="btn-group" id="main-btns">
+      <button class="btn" onclick="startBotMode()">🤖 BOTLA OYNA</button>
+      <button class="btn btn-online" onclick="showOnlinePanel()">🌐 ONLINE OYNA</button>
+      <button class="btn btn-settings" onclick="openSettings()">⚙️ AYARLAR</button>
+    </div>
+
+    <div class="online-panel" id="online-panel">
+      <div id="online-status" style="font-size: 0.85rem; color: #b09983;">Ağ Bağlantısı Bekleniyor...</div>
+      <div id="host-section" style="display:none;">
+        <div style="font-size: 0.8rem; color: #876d54; margin-bottom: 4px;">Oda Kodu:</div>
+        <div class="room-code-display" id="my-code" onclick="copyCode()">---</div>
+      </div>
+      <div id="join-section" style="display:none;">
+        <input type="text" id="join-code" class="room-input" placeholder="ODA KODU" maxlength="10">
+        <button class="btn btn-online" style="width: 100%; margin-top: 8px; padding: 10px;" onclick="joinRoom()">KATIL</button>
+      </div>
+      <button class="back-btn" onclick="hideOnlinePanel()">← Ana Menü</button>
+    </div>
+  </div>
+
+  <canvas id="gameCanvas"></canvas>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// Ayarlar ve Ses Yönetimi
+const settings = {
+  sfxEnabled: true,
+  volume: 0.8,
+  screenShakeEnabled: true
+};
+
+function openSettings() { document.getElementById('settings-modal').style.display = 'flex'; }
+function closeSettings() { document.getElementById('settings-modal').style.display = 'none'; }
+
+function toggleSFX() {
+  settings.sfxEnabled = !settings.sfxEnabled;
+  document.getElementById('sfx-toggle').classList.toggle('active', settings.sfxEnabled);
+}
+
+function updateVolume(val) {
+  settings.volume = val / 100;
+}
+
+function toggleShake() {
+  settings.screenShakeEnabled = !settings.screenShakeEnabled;
+  document.getElementById('shake-toggle').classList.toggle('active', settings.screenShakeEnabled);
+}
+
+// Web Audio API Synthesizer 2.0
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+
+function createNoiseBuffer() {
+  if (!audioCtx) return null;
+  const bufferSize = audioCtx.sampleRate * 0.5;
+  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+  const output = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+  return buffer;
+}
+
+function playSound(type) {
+  if (!settings.sfxEnabled || settings.volume <= 0) return;
+  try {
+    if (!audioCtx) audioCtx = new AudioCtx();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
+    const now = audioCtx.currentTime;
+    const masterGain = audioCtx.createGain();
+    masterGain.gain.value = settings.volume;
+    masterGain.connect(audioCtx.destination);
+
+    if (type === 'shoot') {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(160, now);
+      osc.frequency.exponentialRampToValueAtTime(30, now + 0.22);
+      gain.gain.setValueAtTime(0.7, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.22);
+      osc.connect(gain); gain.connect(masterGain);
+      osc.start(now); osc.stop(now + 0.22);
+
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = createNoiseBuffer();
+      const noiseFilter = audioCtx.createBiquadFilter();
+      noiseFilter.type = 'lowpass';
+      noiseFilter.frequency.setValueAtTime(1000, now);
+      noiseFilter.frequency.linearRampToValueAtTime(100, now + 0.2);
+      const noiseGain = audioCtx.createGain();
+      noiseGain.gain.setValueAtTime(0.5, now);
+      noiseGain.gain.linearRampToValueAtTime(0.01, now + 0.2);
+      noise.connect(noiseFilter); noiseFilter.connect(noiseGain); noiseGain.connect(masterGain);
+      noise.start(now); noise.stop(now + 0.2);
+
+    } else if (type === 'hit') {
+      const noise = audioCtx.createBufferSource();
+      noise.buffer = createNoiseBuffer();
+      const filter = audioCtx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(800, now);
+      filter.frequency.exponentialRampToValueAtTime(40, now + 0.4);
+      const gain = audioCtx.createGain();
+      gain.gain.setValueAtTime(0.9, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.4);
+      noise.connect(filter); filter.connect(gain); gain.connect(masterGain);
+      noise.start(now); noise.stop(now + 0.4);
+
+    } else if (type === 'bounce') {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, now);
+      osc.frequency.exponentialRampToValueAtTime(400, now + 0.12);
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.12);
+      osc.connect(gain); gain.connect(masterGain);
+      osc.start(now); osc.stop(now + 0.12);
+
+    } else if (type === 'skill') {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(300, now);
+      osc.frequency.exponentialRampToValueAtTime(900, now + 0.25);
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+      osc.connect(gain); gain.connect(masterGain);
+      osc.start(now); osc.stop(now + 0.25);
+    }
+  } catch(e) {}
+}
+
+// Yetenek Tanımları
+const ALL_SKILLS = [
+  { id: 0, name: "CAN YENİLE", cost: 2, icon: "💚", cdMax: 600 },
+  { id: 1, name: "3'LÜ MERMİ", cost: 1, icon: "🔱", cdMax: 360 },
+  { id: 2, name: "KÖRLÜK", cost: 2, icon: "👁️‍🗨️", cdMax: 720 },
+  { id: 3, name: "SEKEN MERMİ", cost: 1, icon: "🏀", cdMax: 300 }
+];
+
+const MAX_YP_CAPACITY = 5;
+let equippedSkills = [0, 1, 2];
+
+function toggleSkillEquip(skillId) {
+  const index = equippedSkills.indexOf(skillId);
+  if (index > -1) {
+    if (equippedSkills.length > 1) equippedSkills.splice(index, 1);
+  } else {
+    if (equippedSkills.length < 3) {
+      const currentCost = equippedSkills.reduce((sum, id) => sum + ALL_SKILLS.find(s=>s.id===id).cost, 0);
+      const newSkillCost = ALL_SKILLS.find(s=>s.id===skillId).cost;
+      if (currentCost + newSkillCost <= MAX_YP_CAPACITY) equippedSkills.push(skillId);
+      else alert(`Kapasite Aşıldı! Maksimum ${MAX_YP_CAPACITY} YP seçebilirsin.`);
+    }
+  }
+  updateSkillMenuUI();
+}
+
+function updateSkillMenuUI() {
+  const currentCost = equippedSkills.reduce((sum, id) => sum + ALL_SKILLS.find(s=>s.id===id).cost, 0);
+  document.getElementById('capacity-text').innerText = `${currentCost} / ${MAX_YP_CAPACITY} YP KAPASİTE`;
+  document.getElementById('capacity-fill').style.width = `${(currentCost / MAX_YP_CAPACITY) * 100}%`;
+  ALL_SKILLS.forEach(s => {
+    const el = document.getElementById(`sel-skill-${s.id}`);
+    if (el) el.classList.toggle('selected', equippedSkills.includes(s.id));
+  });
+}
+
+const usernameInput = document.getElementById('username-input');
+if (localStorage.getItem('tactical_war_username')) {
+  usernameInput.value = localStorage.getItem('tactical_war_username');
+} else usernameInput.value = 'OYUNCU 1';
+
+function getPlayerName() {
+  let name = usernameInput.value.trim().toUpperCase() || 'OYUNCU 1';
+  localStorage.setItem('tactical_war_username', name);
+  return name;
+}
+
+let selectedMapId = 1;
+function selectMap(id) {
+  selectedMapId = id;
+  document.getElementById('map-btn-1').classList.toggle('active', id === 1);
+  document.getElementById('map-btn-2').classList.toggle('active', id === 2);
+}
+
+const WORLD_WIDTH = 2400;
+const WORLD_HEIGHT = 1800;
+const camera = { x: 0, y: 0 };
+
+let gameMode = null;
+let isHost = true;
+let peer = null;
+let conn = null;
+let gameRunning = false;
+let screenShake = 0;
+
+const keys = {};
+const mouse = { x: 0, y: 0, worldX: 0, worldY: 0, down: false };
+
+const isTouchDevice = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+const joyMove = { active: false, x: 0, y: 0, angle: 0 };
+const joyAim = { active: false, x: 0, y: 0, angle: 0 };
+
+function setupTouchControls() {
+  if (!isTouchDevice) return;
+  document.getElementById('joy-move').style.display = 'flex';
+  document.getElementById('joy-aim').style.display = 'flex';
+
+  const joyMoveEl = document.getElementById('joy-move');
+  const stickMoveEl = document.getElementById('stick-move');
+  const joyAimEl = document.getElementById('joy-aim');
+  const stickAimEl = document.getElementById('stick-aim');
+
+  function handleTouch(e, isAim) {
+    const rect = isAim ? joyAimEl.getBoundingClientRect() : joyMoveEl.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    for (let t of e.touches) {
+      if (t.clientX >= rect.left - 40 && t.clientX <= rect.right + 40 &&
+          t.clientY >= rect.top - 40 && t.clientY <= rect.bottom + 40) {
+        const dx = t.clientX - centerX;
+        const dy = t.clientY - centerY;
+        const dist = Math.hypot(dx, dy);
+        const angle = Math.atan2(dy, dx);
+        const maxR = 40;
+        const clampR = Math.min(dist, maxR);
+
+        const stickEl = isAim ? stickAimEl : stickMoveEl;
+        stickEl.style.transform = `translate(${Math.cos(angle)*clampR}px, ${Math.sin(angle)*clampR}px)`;
+
+        if (isAim) {
+          joyAim.active = true; joyAim.angle = angle; mouse.down = true;
+        } else {
+          joyMove.active = true; joyMove.x = Math.cos(angle); joyMove.y = Math.sin(angle);
+        }
+      }
+    }
+  }
+
+  window.addEventListener('touchstart', e => { handleTouch(e, false); handleTouch(e, true); });
+  window.addEventListener('touchmove', e => { handleTouch(e, false); handleTouch(e, true); });
+  window.addEventListener('touchend', e => {
+    if (e.touches.length === 0) {
+      joyMove.active = false; joyAim.active = false; mouse.down = false;
+      stickMoveEl.style.transform = `translate(0px, 0px)`;
+      stickAimEl.style.transform = `translate(0px, 0px)`;
+    }
+  });
+}
+
+window.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.key === '1') triggerSkillSlot(0);
+  if (e.key === '2') triggerSkillSlot(1);
+  if (e.key === '3') triggerSkillSlot(2);
+});
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+window.addEventListener('mousedown', () => mouse.down = true);
+window.addEventListener('mouseup', () => mouse.down = false);
+
+const particles = [];
+const bullets = [];
+const mapObstacles = [];
+const trackMarks = [];
+const mapDetails = [];
+
+function generateTerrainDetails(mapId) {
+  mapDetails.length = 0;
+  const count = 300;
+  for (let i = 0; i < count; i++) {
+    mapDetails.push({
+      x: Math.random() * WORLD_WIDTH,
+      y: Math.random() * WORLD_HEIGHT,
+      size: Math.random() * 6 + 2,
+      shade: Math.random() > 0.5 ? 'dark' : 'light',
+      angle: Math.random() * Math.PI * 2
+    });
+  }
+}
+
+function generateMap(mapId) {
+  mapObstacles.length = 0;
+  generateTerrainDetails(mapId);
+
+  if (mapId === 1) {
+    [
+      { x: 1000, y: 700, w: 400, h: 80, type: 'brick' },
+      { x: 1000, y: 1020, w: 400, h: 80, type: 'brick' },
+      { x: 1160, y: 780, w: 80, h: 240, type: 'brick' },
+      { x: 350, y: 300, w: 450, h: 80, type: 'brick' },
+      { x: 1600, y: 300, w: 450, h: 80, type: 'brick' },
+      { x: 350, y: 1420, w: 450, h: 80, type: 'brick' },
+      { x: 1600, y: 1420, w: 450, h: 80, type: 'brick' },
+      { x: 250, y: 750, w: 180, h: 300, type: 'stone' },
+      { x: 1970, y: 750, w: 180, h: 300, type: 'stone' }
+    ].forEach(w => mapObstacles.push(w));
+  } else {
+    [
+      { x: 1050, y: 750, w: 300, h: 300, type: 'pyramid' },
+      { x: 400, y: 350, w: 220, h: 220, type: 'pyramid' },
+      { x: 1780, y: 1230, w: 220, h: 220, type: 'pyramid' },
+      { x: 350, y: 1300, w: 450, h: 80, type: 'sandstone' },
+      { x: 1600, y: 440, w: 450, h: 80, type: 'sandstone' }
+    ].forEach(o => mapObstacles.push(o));
+  }
+}
+
+class Particle {
+  constructor(x, y, vx, vy, color, size, life) {
+    this.x = x; this.y = y; this.vx = vx; this.vy = vy;
+    this.color = color; this.size = size; this.maxLife = life; this.life = life;
+  }
+  update() {
+    this.x += this.vx; this.y += this.vy;
+    this.vx *= 0.94; this.vy *= 0.94;
+    this.life--;
+  }
+  draw(ctx) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, this.life / this.maxLife);
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+function createExplosion(x, y, isBig = false) {
+  if (settings.screenShakeEnabled) screenShake = isBig ? 12 : 4;
+  playSound(isBig ? 'hit' : 'shoot');
+  for (let i = 0; i < (isBig ? 35 : 16); i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 7 + 1;
+    particles.push(new Particle(x, y, Math.cos(angle)*speed, Math.sin(angle)*speed, Math.random() > 0.5 ? '#ff9f1c' : '#ff4040', Math.random()*5+2, 22));
+  }
+}
+
+class Bullet {
+  constructor(x, y, angle, owner, isBouncing = false) {
+    this.x = x; this.y = y;
+    this.vx = Math.cos(angle) * 16;
+    this.vy = Math.sin(angle) * 16;
+    this.owner = owner;
+    this.alive = true;
+    this.isBouncing = isBouncing;
+    this.bouncesLeft = isBouncing ? 3 : 0;
+    this.color = isBouncing ? '#00e5ff' : owner.bulletColor;
+  }
+
+  update() {
+    let nextX = this.x + this.vx;
+    let nextY = this.y + this.vy;
+
+    if (this.isBouncing && this.bouncesLeft > 0) {
+      let bounced = false;
+      if (nextX < 0 || nextX > WORLD_WIDTH) { this.vx = -this.vx; bounced = true; }
+      if (nextY < 0 || nextY > WORLD_HEIGHT) { this.vy = -this.vy; bounced = true; }
+
+      for (let obs of mapObstacles) {
+        if (nextX > obs.x && nextX < obs.x + obs.w && nextY > obs.y && nextY < obs.y + obs.h) {
+          if (this.x <= obs.x || this.x >= obs.x + obs.w) this.vx = -this.vx;
+          else this.vy = -this.vy;
+          bounced = true;
+          break;
+        }
+      }
+
+      if (bounced) {
+        this.bouncesLeft--;
+        playSound('bounce');
+        createExplosion(this.x, this.y, false);
+      }
+    } else {
+      if (nextX < 0 || nextX > WORLD_WIDTH || nextY < 0 || nextY > WORLD_HEIGHT) {
+        this.alive = false; createExplosion(this.x, this.y, false);
+      }
+      for (let obs of mapObstacles) {
+        if (nextX > obs.x && nextX < obs.x + obs.w && nextY > obs.y && nextY < obs.y + obs.h) {
+          this.alive = false; createExplosion(this.x, this.y, false);
+        }
+      }
+    }
+
+    this.x += this.vx; this.y += this.vy;
+
+    if (Math.random() < 0.4) {
+      particles.push(new Particle(this.x, this.y, 0, 0, 'rgba(200,200,200,0.3)', 2, 10));
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.shadowBlur = 8; ctx.shadowColor = this.color;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.isBouncing ? 5 : 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+class Tank {
+  constructor(x, y, colorHex, name, bulletColor) {
+    this.x = x; this.y = y;
+    this.angle = 0;
+    this.turretAngle = 0;
+    this.colorHex = colorHex;
+    this.bulletColor = bulletColor;
+    this.name = name;
+    this.hp = 100;
+    this.speed = 3.8;
+    this.radius = 26;
+    this.cooldown = 0;
+    this.recoil = 0;
+
+    this.skillCDs = [0, 0, 0];
+    this.nextShotTriple = false;
+    this.nextShotBounce = false;
+    this.blindTimer = 0;
+  }
+
+  update() {
+    if (this.cooldown > 0) this.cooldown--;
+    if (this.recoil > 0) this.recoil *= 0.82;
+    if (this.blindTimer > 0) this.blindTimer--;
+
+    for (let i = 0; i < 3; i++) {
+      if (this.skillCDs[i] > 0) this.skillCDs[i]--;
+    }
+  }
+
+  addTrackMark() {
+    trackMarks.push({
+      x: this.x, y: this.y, angle: this.angle, alpha: 0.4,
+      color: selectedMapId === 1 ? '#18120a' : '#9c733c'
+    });
+    if (trackMarks.length > 250) trackMarks.shift();
+  }
+
+  heal() {
+    this.hp = Math.min(100, this.hp + 25);
+    playSound('skill');
+    for (let i = 0; i < 20; i++) {
+      particles.push(new Particle(
+        this.x + (Math.random()-0.5)*30, this.y + (Math.random()-0.5)*30,
+        0, -Math.random()*3, '#20c997', 4, 25
+      ));
+    }
+  }
+
+  shoot() {
+    if (this.cooldown <= 0) {
+      playSound('shoot');
+      const spawnBullet = (ang) => {
+        const tipX = this.x + Math.cos(ang) * 40;
+        const tipY = this.y + Math.sin(ang) * 40;
+        bullets.push(new Bullet(tipX, tipY, ang, this, this.nextShotBounce));
+
+        for (let i = 0; i < 6; i++) {
+          particles.push(new Particle(
+            tipX, tipY, Math.cos(ang + (Math.random()-0.5))*4, Math.sin(ang + (Math.random()-0.5))*4,
+            '#ffcc00', Math.random()*4+2, 8
+          ));
+          particles.push(new Particle(
+            tipX, tipY, Math.cos(ang)*2, Math.sin(ang)*2,
+            'rgba(100,100,100,0.5)', Math.random()*5+3, 16
+          ));
+        }
+      };
+
+      if (this.nextShotTriple) {
+        [-0.18, 0, 0.18].forEach(angOffset => spawnBullet(this.turretAngle + angOffset));
+        this.nextShotTriple = false;
+        this.nextShotBounce = false;
+      } else {
+        spawnBullet(this.turretAngle);
+        this.nextShotBounce = false;
+      }
+
+      this.cooldown = 20;
+      this.recoil = 12;
+      updateInGameSkillUI();
+    }
+  }
+
+  draw(ctx) {
+    ctx.save();
+    ctx.translate(this.x, this.y);
+
+    ctx.save();
+    ctx.rotate(this.angle);
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.roundRect(-24, -20, 52, 44, 8); ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.rotate(this.angle);
+    ctx.fillStyle = '#14100c';
+    ctx.beginPath(); ctx.roundRect(-26, -26, 52, 12, 3); ctx.fill();
+    ctx.beginPath(); ctx.roundRect(-26, 14, 52, 12, 3); ctx.fill();
+
+    ctx.fillStyle = '#3a2d21';
+    for (let i = -22; i <= 20; i += 8) {
+      ctx.fillRect(i, -25, 4, 10);
+      ctx.fillRect(i, 15, 4, 10);
+    }
+
+    let grad = ctx.createLinearGradient(-20, -18, 20, 18);
+    grad.addColorStop(0, this.colorHex);
+    grad.addColorStop(1, '#15100b');
+    ctx.fillStyle = grad;
+    ctx.strokeStyle = '#634a33'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(-20, -16, 40, 32, 5); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = '#100b07';
+    ctx.fillRect(-16, -10, 10, 20);
+    ctx.restore();
+
+    ctx.save();
+    ctx.rotate(this.turretAngle);
+    ctx.fillStyle = '#2b2015';
+    ctx.fillRect(0 - this.recoil, -5, 38, 10);
+    ctx.fillStyle = '#0d0a06';
+    ctx.fillRect(34 - this.recoil, -7, 6, 14);
+
+    let tGrad = ctx.createRadialGradient(0, 0, 2, 0, 0, 16);
+    tGrad.addColorStop(0, this.colorHex);
+    tGrad.addColorStop(1, '#1c140d');
+    ctx.fillStyle = tGrad;
+    ctx.strokeStyle = '#dcb282'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+
+    ctx.fillStyle = '#0d0a06';
+    ctx.beginPath(); ctx.arc(-2, 0, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = '900 11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(this.name, 0, -36);
+
+    ctx.restore();
+  }
+}
+
+const p1 = new Tank(200, 200, '#00e5ff', 'OYUNCU 1', '#00e5ff');
+const p2 = new Tank(2200, 1600, '#ff3366', 'DÜŞMAN', '#ff3366');
+
+function triggerSkillSlot(slotIndex) {
+  const localPlayer = (gameMode === 'ONLINE' && !isHost) ? p2 : p1;
+  const targetPlayer = (localPlayer === p1) ? p2 : p1;
+
+  if (slotIndex >= equippedSkills.length) return;
+  if (localPlayer.skillCDs[slotIndex] > 0) return;
+
+  const skillId = equippedSkills[slotIndex];
+  const skill = ALL_SKILLS.find(s => s.id === skillId);
+
+  if (!skill) return;
+
+  if (skill.id === 0) localPlayer.heal();
+  else if (skill.id === 1) { localPlayer.nextShotTriple = true; playSound('skill'); }
+  else if (skill.id === 2) { targetPlayer.blindTimer = 60; playSound('skill'); } // 1 saniye (60 kare)
+  else if (skill.id === 3) { localPlayer.nextShotBounce = true; playSound('skill'); }
+
+  localPlayer.skillCDs[slotIndex] = skill.cdMax;
+  updateInGameSkillUI();
+}
+
+function updateInGameSkillUI() {
+  const localPlayer = (gameMode === 'ONLINE' && !isHost) ? p2 : p1;
+
+  for (let i = 0; i < 3; i++) {
+    const slotEl = document.getElementById(`slot-${i}`);
+    const cdEl = document.getElementById(`cd-${i}`);
+
+    if (i < equippedSkills.length) {
+      const skill = ALL_SKILLS.find(s => s.id === equippedSkills[i]);
+      document.getElementById(`name-${i}`).innerText = skill.name;
+      document.getElementById(`cost-${i}`).innerText = `${skill.cost} YP`;
+      document.getElementById(`icon-${i}`).innerText = skill.icon;
+
+      const currentCD = localPlayer.skillCDs[i];
+      if (currentCD > 0) {
+        cdEl.style.display = 'flex';
+        cdEl.innerText = Math.ceil(currentCD / 60) + 's';
+        slotEl.classList.add('disabled');
+      } else {
+        cdEl.style.display = 'none';
+        slotEl.classList.remove('disabled');
+      }
+
+      const isBuffActive = (skill.id === 1 && localPlayer.nextShotTriple) || (skill.id === 3 && localPlayer.nextShotBounce);
+      slotEl.classList.toggle('active-buff', isBuffActive);
+    }
+  }
+}
+
+function checkCollision(x, y, radius) {
+  for (let obs of mapObstacles) {
+    if (x + radius > obs.x && x - radius < obs.x + obs.w &&
+        y + radius > obs.y && y - radius < obs.y + obs.h) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function handleInput() {
+  const localPlayer = (gameMode === 'ONLINE' && !isHost) ? p2 : p1;
+
+  let dx = 0, dy = 0;
+  if (keys['w'] || keys['arrowup']) dy -= 1;
+  if (keys['s'] || keys['arrowdown']) dy += 1;
+  if (keys['a'] || keys['arrowleft']) dx -= 1;
+  if (keys['d'] || keys['arrowright']) dx += 1;
+
+  if (joyMove.active) {
+    dx = joyMove.x; dy = joyMove.y;
+  }
+
+  if (dx !== 0 || dy !== 0) {
+    const moveAngle = Math.atan2(dy, dx);
+    const nextX = localPlayer.x + Math.cos(moveAngle) * localPlayer.speed;
+    const nextY = localPlayer.y + Math.sin(moveAngle) * localPlayer.speed;
+
+    if (!checkCollision(nextX, nextY, localPlayer.radius)) {
+      localPlayer.x = Math.max(30, Math.min(WORLD_WIDTH - 30, nextX));
+      localPlayer.y = Math.max(30, Math.min(WORLD_HEIGHT - 30, nextY));
+      localPlayer.angle = moveAngle;
+      localPlayer.addTrackMark();
+    }
+  }
+
+  if (joyAim.active) {
+    localPlayer.turretAngle = joyAim.angle;
+  } else {
+    mouse.worldX = mouse.x + camera.x;
+    mouse.worldY = mouse.y + camera.y;
+    localPlayer.turretAngle = Math.atan2(mouse.worldY - localPlayer.y, mouse.worldX - localPlayer.x);
+  }
+
+  if (mouse.down) localPlayer.shoot();
+}
+
+function updateBotAI() {
+  if (gameMode !== 'BOT' || p2.hp <= 0) return;
+
+  const isBlind = p2.blindTimer > 0;
+  const angleToP1 = Math.atan2(p1.y - p2.y, p1.x - p2.x);
+  p2.turretAngle = angleToP1 + (isBlind ? (Math.random()-0.5)*0.8 : 0);
+
+  const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+
+  if (p2.hp < 40 && p2.skillCDs[0] <= 0 && equippedSkills.includes(0)) {
+    p2.heal(); p2.skillCDs[equippedSkills.indexOf(0)] = ALL_SKILLS[0].cdMax;
+  } else if (dist < 600 && equippedSkills.includes(1) && p2.skillCDs[equippedSkills.indexOf(1)] <= 0 && Math.random() < 0.01) {
+    p2.nextShotTriple = true; p2.skillCDs[equippedSkills.indexOf(1)] = ALL_SKILLS[1].cdMax;
+  }
+
+  if (dist > 180) {
+    const moveX = p2.x + Math.cos(angleToP1) * (p2.speed * 0.8);
+    const moveY = p2.y + Math.sin(angleToP1) * (p2.speed * 0.8);
+    if (!checkCollision(moveX, moveY, p2.radius)) {
+      p2.x = moveX; p2.y = moveY; p2.angle = angleToP1; p2.addTrackMark();
+    }
+  }
+
+  if (dist < (isBlind ? 250 : 700) && Math.random() < 0.03) p2.shoot();
+}
+
+function checkBulletTankCollisions() {
+  bullets.forEach(b => {
+    if (!b.alive) return;
+    const DAMAGE = 25;
+
+    if (b.owner !== p1 && Math.hypot(b.x - p1.x, b.y - p1.y) < p1.radius) {
+      p1.hp -= DAMAGE; b.alive = false; createExplosion(p1.x, p1.y, true);
+      if (p1.hp <= 0) endGame(`${p2.name} KAZANDI!`);
+    }
+
+    if (b.owner !== p2 && Math.hypot(b.x - p2.x, b.y - p2.y) < p2.radius) {
+      p2.hp -= DAMAGE; b.alive = false; createExplosion(p2.x, p2.y, true);
+      if (p2.hp <= 0) endGame(`${p1.name} KAZANDI!`);
+    }
+  });
+}
+
+function updateCamera() {
+  const target = (gameMode === 'ONLINE' && !isHost) ? p2 : p1;
+  camera.x += (target.x - canvas.width / 2 - camera.x) * 0.1;
+  camera.y += (target.y - canvas.height / 2 - camera.y) * 0.1;
+  camera.x = Math.max(0, Math.min(WORLD_WIDTH - canvas.width, camera.x));
+  camera.y = Math.max(0, Math.min(WORLD_HEIGHT - canvas.height, camera.y));
+}
+
+function drawGroundTerrain(ctx) {
+  ctx.save();
+
+  if (selectedMapId === 1) {
+    ctx.fillStyle = '#2c2217';
+    ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
+    mapDetails.forEach(d => {
+      ctx.fillStyle = d.shade === 'dark' ? '#1f1710' : '#3d3022';
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.size, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+  } else {
+    ctx.fillStyle = '#d2a663';
+    ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
+    ctx.strokeStyle = 'rgba(180, 130, 60, 0.25)';
+    ctx.lineWidth = 14;
+    for (let y = -200; y < WORLD_HEIGHT + 200; y += 120) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.bezierCurveTo(WORLD_WIDTH * 0.33, y + 60, WORLD_WIDTH * 0.66, y - 60, WORLD_WIDTH, y + 20);
+      ctx.stroke();
+    }
+
+    mapDetails.forEach(d => {
+      ctx.fillStyle = d.shade === 'dark' ? '#ab8044' : '#e8c07d';
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.size * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  trackMarks.forEach(tm => {
+    ctx.save();
+    ctx.translate(tm.x, tm.y);
+    ctx.rotate(tm.angle);
+    ctx.fillStyle = tm.color;
+    ctx.fillRect(-8, -14, 16, 4);
+    ctx.fillRect(-8, 10, 16, 4);
+    ctx.restore();
+  });
+
+  ctx.restore();
+}
+
+function drawHDObstacles(ctx) {
+  mapObstacles.forEach(obs => {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(obs.x + 12, obs.y + 12, obs.w, obs.h);
+
+    if (selectedMapId === 1) {
+      ctx.fillStyle = (obs.type === 'stone') ? '#2e2620' : '#423123';
+      ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+
+      ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 2;
+      for (let y = obs.y; y < obs.y + obs.h; y += 20) {
+        ctx.beginPath(); ctx.moveTo(obs.x, y); ctx.lineTo(obs.x + obs.w, y); ctx.stroke();
+      }
+      ctx.strokeStyle = '#634b35'; ctx.lineWidth = 2;
+      ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+    } else {
+      let pGrad = ctx.createLinearGradient(obs.x, obs.y, obs.x + obs.w, obs.y + obs.h);
+      pGrad.addColorStop(0, '#d4a359'); pGrad.addColorStop(1, '#8c6328');
+      ctx.fillStyle = pGrad;
+      ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+
+      ctx.strokeStyle = '#ffe29d'; ctx.lineWidth = 2;
+      ctx.strokeRect(obs.x, obs.y, obs.w, obs.h);
+    }
+    ctx.restore();
+  });
+}
+
+function drawBlindnessOverlay(localPlayer) {
+  if (localPlayer.blindTimer <= 0) return;
+  const px = localPlayer.x - camera.x;
+  const py = localPlayer.y - camera.y;
+
+  ctx.save();
+  const radGrad = ctx.createRadialGradient(px, py, 70, px, py, 200);
+  radGrad.addColorStop(0, 'rgba(0,0,0,0)');
+  radGrad.addColorStop(1, 'rgba(0,0,0,0.99)');
+  ctx.fillStyle = radGrad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.restore();
+}
+
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+
+  if (screenShake > 0) {
+    ctx.translate((Math.random() - 0.5) * screenShake, (Math.random() - 0.5) * screenShake);
+    screenShake *= 0.88;
+  }
+
+  ctx.translate(-camera.x, -camera.y);
+
+  drawGroundTerrain(ctx);
+  drawHDObstacles(ctx);
+
+  p1.draw(ctx);
+  p2.draw(ctx);
+  bullets.forEach(b => b.draw(ctx));
+  particles.forEach(p => p.draw(ctx));
+
+  ctx.restore();
+
+  const localPlayer = (gameMode === 'ONLINE' && !isHost) ? p2 : p1;
+  drawBlindnessOverlay(localPlayer);
+}
+
+function updateGameLogic() {
+  if (!gameRunning) return;
+
+  handleInput();
+  updateBotAI();
+
+  p1.update();
+  p2.update();
+
+  bullets.forEach(b => b.update());
+  for (let i = bullets.length - 1; i >= 0; i--) if (!bullets[i].alive) bullets.splice(i, 1);
+
+  particles.forEach(p => p.update());
+  for (let i = particles.length - 1; i >= 0; i--) if (particles[i].life <= 0) particles.splice(i, 1);
+
+  checkBulletTankCollisions();
+  updateCamera();
+  updateInGameSkillUI();
+
+  document.getElementById('p1-name').innerText = p1.name;
+  document.getElementById('p2-name').innerText = p2.name;
+  document.getElementById('p1-hp').style.width = Math.max(0, p1.hp) + '%';
+  document.getElementById('p2-hp').style.width = Math.max(0, p2.hp) + '%';
+
+  syncOnlineState();
+}
+
+function gameLoop() {
+  if (gameRunning) updateGameLogic();
+  render();
+  requestAnimationFrame(gameLoop);
+}
+
+function initGame() {
+  setupTouchControls();
+  generateMap(selectedMapId);
+
+  p1.x = 200; p1.y = 200; p1.hp = 100; p1.blindTimer = 0; p1.skillCDs = [0,0,0];
+  p2.x = 2200; p2.y = 1600; p2.hp = 100; p2.blindTimer = 0; p2.skillCDs = [0,0,0];
+  bullets.length = 0; particles.length = 0; trackMarks.length = 0;
+  gameRunning = true;
+
+  document.getElementById('menu').style.display = 'none';
+  document.getElementById('hud').style.display = 'flex';
+  document.getElementById('skill-bar').style.display = 'flex';
+
+  updateInGameSkillUI();
+}
+
+function startBotMode() {
+  gameMode = 'BOT';
+  p1.name = getPlayerName();
+  p2.name = 'BOT TANK';
+  initGame();
+}
+
+function endGame(msg) {
+  gameRunning = false;
+  setTimeout(() => {
+    alert(msg);
+    document.getElementById('menu').style.display = 'flex';
+    document.getElementById('hud').style.display = 'none';
+    document.getElementById('skill-bar').style.display = 'none';
+    if (isTouchDevice) {
+      document.getElementById('joy-move').style.display = 'none';
+      document.getElementById('joy-aim').style.display = 'none';
+    }
+  }, 100);
+}
+
+function showOnlinePanel() {
+  document.getElementById('main-btns').style.display = 'none';
+  document.getElementById('online-panel').style.display = 'flex';
+  document.getElementById('online-status').innerText = 'Ağ Sunucusuna Bağlanılıyor...';
+
+  if (!peer || peer.destroyed) {
+    const customId = Math.floor(100000 + Math.random() * 900000).toString();
+    peer = new Peer(customId);
+
+    peer.on('open', id => {
+      document.getElementById('online-status').innerText = 'Sunucu Hazır!';
+      document.getElementById('host-section').style.display = 'block';
+      document.getElementById('join-section').style.display = 'block';
+      document.getElementById('my-code').innerText = id;
+    });
+
+    peer.on('connection', connection => {
+      conn = connection;
+      isHost = true;
+      p1.name = getPlayerName();
+      setupPeerEvents();
+    });
+
+    peer.on('error', err => {
+      console.error(err);
+      document.getElementById('online-status').innerText = 'Bağlantı Hatası!';
+      alert('Sunucu hatası: ' + err.type);
+    });
+  } else if (peer.open) {
+    document.getElementById('online-status').innerText = 'Sunucu Hazır!';
+    document.getElementById('host-section').style.display = 'block';
+    document.getElementById('join-section').style.display = 'block';
+  }
+}
+
+function hideOnlinePanel() {
+  document.getElementById('main-btns').style.display = 'flex';
+  document.getElementById('online-panel').style.display = 'none';
+}
+
+function joinRoom() {
+  if (!peer || !peer.open) {
+    alert('Ağ sunucusuna henüz bağlanılamadı. Lütfen bekleyin...');
+    return;
+  }
+  const code = document.getElementById('join-code').value.trim();
+  if (!code) {
+    alert('Lütfen oda kodunu girin!');
+    return;
+  }
+
+  document.getElementById('online-status').innerText = 'Odaya Bağlanılıyor...';
+  conn = peer.connect(code);
+  isHost = false;
+  p2.name = getPlayerName();
+  setupPeerEvents();
+}
+
+function setupPeerEvents() {
+  conn.on('open', () => {
+    gameMode = 'ONLINE';
+    if (isHost) {
+      conn.send({ type: 'init', mapId: selectedMapId, p1Name: getPlayerName() });
+    } else {
+      conn.send({ type: 'join', p2Name: getPlayerName() });
+    }
+    initGame();
+  });
+
+  conn.on('data', data => {
+    if (data.type === 'init' && !isHost) {
+      selectedMapId = data.mapId;
+      if (data.p1Name) p1.name = data.p1Name;
+      generateMap(selectedMapId);
+    }
+    if (data.type === 'join' && isHost) {
+      if (data.p2Name) p2.name = data.p2Name;
+    }
+
+    if (isHost) {
+      if (data.p2) {
+        p2.x = data.p2.x; p2.y = data.p2.y; p2.angle = data.p2.angle; p2.turretAngle = data.p2.turretAngle;
+        p2.blindTimer = data.p2.blindTimer;
+      }
+      if (data.p2Shooting) p2.shoot();
+    } else {
+      if (data.p1) {
+        p1.x = data.p1.x; p1.y = data.p1.y; p1.angle = data.p1.angle; p1.turretAngle = data.p1.turretAngle;
+        p1.blindTimer = data.p1.blindTimer;
+      }
+      if (data.p1Hp !== undefined) p1.hp = data.p1Hp;
+      if (data.p2Hp !== undefined) p2.hp = data.p2Hp;
+      if (data.p1Shooting) p1.shoot();
+    }
+  });
+
+  conn.on('close', () => {
+    endGame('Rakip oyundan ayrıldı!');
+  });
+
+  conn.on('error', err => {
+    alert('Bağlantı hatası oluştu!');
+  });
+}
+
+function syncOnlineState() {
+  if (gameMode !== 'ONLINE' || !conn || !conn.open) return;
+  if (isHost) {
+    conn.send({
+      p1: { x: p1.x, y: p1.y, angle: p1.angle, turretAngle: p1.turretAngle, blindTimer: p1.blindTimer },
+      p1Hp: p1.hp,
+      p2Hp: p2.hp,
+      p1Shooting: mouse.down && p1.cooldown <= 0
+    });
+  } else {
+    conn.send({
+      p2: { x: p2.x, y: p2.y, angle: p2.angle, turretAngle: p2.turretAngle, blindTimer: p2.blindTimer },
+      p2Shooting: mouse.down && p2.cooldown <= 0
+    });
+  }
+}
+
+function copyCode() {
+  const code = document.getElementById('my-code').innerText;
+  if (code && code !== '---') {
+    navigator.clipboard.writeText(code);
+    alert('Oda Kodu Kopyalandı: ' + code);
+  }
+}
+
+updateSkillMenuUI();
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
