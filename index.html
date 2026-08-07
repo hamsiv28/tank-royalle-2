@@ -173,11 +173,12 @@
       background: #1c150e; border: 2px solid #4a3827;
       padding: 16px; border-radius: 8px; text-align: center;
     }
-    input[type="text"].room-input {
+    input[type="text"].room-input, input[type="text"].server-input {
       width: 100%; padding: 10px; border-radius: 4px; border: 2px solid #4a3827;
-      background: #0d0a06; color: #fff; font-size: 1.1rem; text-align: center;
-      letter-spacing: 3px; outline: none; font-weight: bold; text-transform: uppercase;
+      background: #0d0a06; color: #fff; font-size: 0.9rem; text-align: center;
+      outline: none; font-weight: bold;
     }
+    input[type="text"].room-input { font-size: 1.1rem; letter-spacing: 3px; text-transform: uppercase; }
     .room-code-display {
       font-size: 1.3rem; font-weight: 900; color: #dcb282;
       background: #0d0a06; padding: 8px; border-radius: 4px;
@@ -189,7 +190,7 @@
 <body>
 
 <div id="canvas-container">
-  <div class="version-badge">1.1v Beta</div>
+  <div class="version-badge">1.1v Beta (Render Dedicated)</div>
 
   <div class="hud" id="hud" style="display: none;">
     <div class="hud-card p1">
@@ -318,7 +319,13 @@
     </div>
 
     <div class="online-panel" id="online-panel">
-      <div id="online-status" style="font-size: 0.85rem; color: #b09983;">Ağ Bağlantısı Bekleniyor...</div>
+      <div style="text-align: left; margin-bottom: 2px;">
+        <label class="section-label" style="font-size: 0.65rem; margin-bottom: 2px;">RENDER SUNUCU DOMAIN:</label>
+        <input type="text" id="render-url-input" class="server-input" placeholder="ornek-sunucu.onrender.com" onchange="saveRenderUrl()">
+      </div>
+
+      <div id="online-status" style="font-size: 0.85rem; color: #b09983;">Sunucuya Bağlanılıyor...</div>
+      
       <div id="host-section" style="display:none;">
         <div style="font-size: 0.8rem; color: #876d54; margin-bottom: 4px;">Oda Kodu:</div>
         <div class="room-code-display" id="my-code" onclick="copyCode()">---</div>
@@ -489,6 +496,17 @@ const usernameInput = document.getElementById('username-input');
 if (localStorage.getItem('tactical_war_username')) {
   usernameInput.value = localStorage.getItem('tactical_war_username');
 } else usernameInput.value = 'OYUNCU 1';
+
+const renderUrlInput = document.getElementById('render-url-input');
+if (localStorage.getItem('tactical_war_render_url')) {
+  renderUrlInput.value = localStorage.getItem('tactical_war_render_url');
+} else {
+  renderUrlInput.value = ''; // Kullanıcı buraya render url'ini girebilir.
+}
+
+function saveRenderUrl() {
+  localStorage.setItem('tactical_war_render_url', renderUrlInput.value.trim());
+}
 
 function getPlayerName() {
   let name = usernameInput.value.trim().toUpperCase() || 'OYUNCU 1';
@@ -1211,54 +1229,83 @@ function endGame(msg) {
   }, 100);
 }
 
-function showOnlinePanel() {
+function cleanHostDomain(rawUrl) {
+  if (!rawUrl) return '';
+  return rawUrl.trim()
+               .replace(/^https?:\/\//i, '')
+               .replace(/\/.*$/, '')
+               .replace(/:.*$/, '');
+}
+
+async function showOnlinePanel() {
   document.getElementById('main-btns').style.display = 'none';
   document.getElementById('online-panel').style.display = 'flex';
-  document.getElementById('online-status').innerText = 'Ağ Sunucusuna Bağlanılıyor...';
 
-  if (!peer || peer.destroyed) {
-    const customId = Math.floor(100000 + Math.random() * 900000).toString();
-    
-    // WebRTC Cross-Network ICE Config (STUN/TURN Fallback)
-    peer = new Peer(customId, {
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' },
-          { urls: 'stun:stun.services.mozilla.com' },
-          { urls: 'turn:openrelay.metered.ca:80', username: 'openrelay', credential: 'openrelay' },
-          { urls: 'turn:openrelay.metered.ca:443', username: 'openrelay', credential: 'openrelay' },
-          { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelay', credential: 'openrelay' }
-        ]
-      }
-    });
+  const userHost = cleanHostDomain(renderUrlInput.value);
 
-    peer.on('open', id => {
-      document.getElementById('online-status').innerText = 'Sunucu Hazır!';
-      document.getElementById('host-section').style.display = 'block';
-      document.getElementById('join-section').style.display = 'block';
-      document.getElementById('my-code').innerText = id;
-    });
+  if (!userHost) {
+    document.getElementById('online-status').innerText = 'Lütfen Render Sunucu Domain adresinizi girin!';
+    document.getElementById('host-section').style.display = 'none';
+    document.getElementById('join-section').style.display = 'none';
+    return;
+  }
 
-    peer.on('connection', connection => {
-      conn = connection;
-      isHost = true;
-      p1.name = getPlayerName();
-      setupPeerEvents();
-    });
+  saveRenderUrl();
+  document.getElementById('online-status').innerText = 'Render sunucusu uyandırılıyor... (Bekleyin)';
 
-    peer.on('error', err => {
-      console.error('PeerJS Hatası:', err);
-      document.getElementById('online-status').innerText = 'Bağlantı Hatası: ' + err.type;
-    });
-  } else if (peer.open) {
-    document.getElementById('online-status').innerText = 'Sunucu Hazır!';
+  // Render Uykudan Uyandırma Ping'i
+  try {
+    await fetch(`https://${userHost}`, { mode: 'no-cors' }).catch(()=>{});
+  } catch(e){}
+
+  connectToCustomPeerServer(userHost);
+}
+
+function connectToCustomPeerServer(hostDomain) {
+  document.getElementById('online-status').innerText = 'Render Sunucusuna Bağlanılıyor...';
+
+  if (peer && !peer.destroyed) {
+    peer.destroy();
+  }
+
+  const customId = Math.floor(100000 + Math.random() * 900000).toString();
+
+  // Render Özel PeerServer Konfigürasyonu
+  peer = new Peer(customId, {
+    host: hostDomain,
+    port: 443,
+    path: '/peerjs',
+    secure: true,
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:stun4.l.google.com:19302' },
+        { urls: 'stun:stun.services.mozilla.com' }
+      ]
+    }
+  });
+
+  peer.on('open', id => {
+    document.getElementById('online-status').innerText = 'Özel Sunucu Hazır!';
     document.getElementById('host-section').style.display = 'block';
     document.getElementById('join-section').style.display = 'block';
-  }
+    document.getElementById('my-code').innerText = id;
+  });
+
+  peer.on('connection', connection => {
+    conn = connection;
+    isHost = true;
+    p1.name = getPlayerName();
+    setupPeerEvents();
+  });
+
+  peer.on('error', err => {
+    console.error('Render PeerJS Hatası:', err);
+    document.getElementById('online-status').innerText = 'Sunucu Bağlantı Hatası: ' + err.type;
+  });
 }
 
 function hideOnlinePanel() {
@@ -1268,7 +1315,7 @@ function hideOnlinePanel() {
 
 function joinRoom() {
   if (!peer || !peer.open) {
-    alert('Ağ sunucusuna henüz bağlanılamadı. Lütfen bekleyin...');
+    alert('Sunucuya henüz bağlanılamadı. Lütfen bekleyin...');
     return;
   }
   const code = document.getElementById('join-code').value.trim();
@@ -1287,9 +1334,9 @@ function joinRoom() {
 function setupPeerEvents() {
   let timeoutCheck = setTimeout(() => {
     if (!gameRunning) {
-      document.getElementById('online-status').innerText = 'Bağlantı Zamana Aşımına Uğradı! (Farklı Ağ Güvenlik Duvarı)';
+      document.getElementById('online-status').innerText = 'Bağlantı Zaman Aşımı! (Kodu Kontrol Edin)';
     }
-  }, 10000);
+  }, 12000);
 
   conn.on('open', () => {
     clearTimeout(timeoutCheck);
